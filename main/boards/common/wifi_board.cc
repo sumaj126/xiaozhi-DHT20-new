@@ -5,6 +5,7 @@
 #include "system_info.h"
 #include "settings.h"
 #include "assets/lang_config.h"
+#include "sensors/sensor_manager.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -348,6 +349,20 @@ std::string WifiBoard::GetDeviceStatusJson() {
         auto chip = cJSON_CreateObject();
         cJSON_AddNumberToObject(chip, "temperature", temp);
         cJSON_AddItemToObject(root, "chip", chip);
+    }
+
+    // DHT20 sensor temperature and humidity
+    try {
+        auto& sensor_manager = SensorManager::GetInstance();
+        float temperature, humidity;
+        if (sensor_manager.ReadTemperatureHumidity(temperature, humidity)) {
+            auto sensor = cJSON_CreateObject();
+            cJSON_AddNumberToObject(sensor, "temperature", temperature);
+            cJSON_AddNumberToObject(sensor, "humidity", humidity);
+            cJSON_AddItemToObject(root, "sensor", sensor);
+        }
+    } catch (...) {
+        // Sensor manager not initialized
     }
 
     auto str = cJSON_PrintUnformatted(root);

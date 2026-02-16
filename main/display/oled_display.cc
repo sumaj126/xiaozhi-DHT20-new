@@ -2,9 +2,11 @@
 #include "assets/lang_config.h"
 #include "lvgl_theme.h"
 #include "lvgl_font.h"
+#include "sensors/sensor_manager.h"
 
 #include <string>
 #include <algorithm>
+#include <ctime>
 
 #include <esp_log.h>
 #include <esp_err.h>
@@ -295,6 +297,9 @@ void OledDisplay::SetupUI_128x64() {
     lv_obj_set_style_text_color(low_battery_label_, lv_color_white(), 0);
     lv_obj_center(low_battery_label_);
     lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
+
+    // Setup standby screen
+    SetupStandbyScreen();
 }
 
 void OledDisplay::SetupUI_128x32() {
@@ -382,6 +387,9 @@ void OledDisplay::SetupUI_128x32() {
     lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
     lv_obj_set_style_anim(chat_message_label_, &a, LV_PART_MAIN);
     lv_obj_set_style_anim_duration(chat_message_label_, lv_anim_speed_clamped(60, 300, 60000), LV_PART_MAIN);
+
+    // Setup standby screen
+    SetupStandbyScreen();
 }
 
 void OledDisplay::SetEmotion(const char* emotion) {
@@ -405,4 +413,212 @@ void OledDisplay::SetTheme(Theme* theme) {
 
     auto screen = lv_screen_active();
     lv_obj_set_style_text_font(screen, text_font, 0);
+}
+
+void OledDisplay::SetupStandbyScreen() {
+    DisplayLockGuard lock(this);
+
+    ESP_LOGI(TAG, "SetupStandbyScreen() called");
+
+    auto lvgl_theme = static_cast<LvglTheme*>(current_theme_);
+    auto text_font = lvgl_theme->text_font()->font();
+    auto large_icon_font = lvgl_theme->large_icon_font()->font();
+
+    ESP_LOGI(TAG, "text_font=%p, large_icon_font=%p", text_font, large_icon_font);
+
+    auto screen = lv_screen_active();
+
+    // Create standby screen container
+    standby_screen_ = lv_obj_create(screen);
+    lv_obj_set_size(standby_screen_, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_radius(standby_screen_, 0, 0);
+    lv_obj_set_style_bg_opa(standby_screen_, LV_OPA_COVER, 0);  // Make background opaque
+    lv_obj_set_style_bg_color(standby_screen_, lv_color_black(), 0);  // Set background color to black
+    lv_obj_set_style_border_width(standby_screen_, 0, 0);
+    lv_obj_set_style_pad_all(standby_screen_, 0, 0);
+    lv_obj_set_scrollbar_mode(standby_screen_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_align(standby_screen_, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN);
+    ESP_LOGI(TAG, "standby_screen_ container created: %p", standby_screen_);
+
+    // Date label (top)
+    date_label_ = lv_label_create(standby_screen_);
+    lv_obj_set_width(date_label_, LV_HOR_RES);
+    lv_obj_set_style_text_align(date_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(date_label_, text_font, 0);
+    lv_obj_set_style_text_color(date_label_, lv_color_white(), 0);  // Set text color to white
+    lv_label_set_text(date_label_, "2023-01-01");
+    lv_obj_align(date_label_, LV_ALIGN_TOP_MID, 0, 4);
+    ESP_LOGI(TAG, "date_label_ created: %p", date_label_);
+
+    // Weekday label
+    weekday_label_ = lv_label_create(standby_screen_);
+    lv_obj_set_width(weekday_label_, LV_HOR_RES);
+    lv_obj_set_style_text_align(weekday_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(weekday_label_, text_font, 0);
+    lv_obj_set_style_text_color(weekday_label_, lv_color_white(), 0);  // Set text color to white
+    lv_label_set_text(weekday_label_, "Sunday");
+    lv_obj_align(weekday_label_, LV_ALIGN_TOP_MID, 0, 18);
+    ESP_LOGI(TAG, "weekday_label_ created: %p", weekday_label_);
+
+    // Time label (center, largest font)
+    time_label_ = lv_label_create(standby_screen_);
+    lv_obj_set_width(time_label_, LV_HOR_RES);  // Same as date and weekday labels
+    lv_obj_set_style_text_align(time_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(time_label_, text_font, 0);  // Use text font for time display
+    lv_obj_set_style_text_color(time_label_, lv_color_white(), 0);  // Set text color to white
+    lv_label_set_text(time_label_, "12:00");
+    // Position time label at fixed Y position (between weekday and temp_humidity)
+    lv_obj_align(time_label_, LV_ALIGN_TOP_MID, 0, 32);
+    ESP_LOGI(TAG, "time_label_ created: %p, text='12:00'", time_label_);
+
+    // Temperature and humidity label (bottom)
+    temp_humidity_label_ = lv_label_create(standby_screen_);
+    lv_obj_set_width(temp_humidity_label_, LV_HOR_RES);
+    lv_obj_set_style_text_align(temp_humidity_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(temp_humidity_label_, text_font, 0);
+    lv_obj_set_style_text_color(temp_humidity_label_, lv_color_white(), 0);  // Set text color to white
+    lv_label_set_text(temp_humidity_label_, "25.0°C / 50.0%");
+    lv_obj_align(temp_humidity_label_, LV_ALIGN_BOTTOM_MID, 0, -4);
+    ESP_LOGI(TAG, "temp_humidity_label_ created: %p", temp_humidity_label_);
+    
+    ESP_LOGI(TAG, "SetupStandbyScreen() completed");
+}
+
+void OledDisplay::ShowStandbyScreen() {
+    DisplayLockGuard lock(this);
+
+    ESP_LOGI(TAG, "ShowStandbyScreen() called");
+
+    if (standby_screen_ == nullptr) {
+        SetupStandbyScreen();
+    }
+
+    // Hide other UI elements
+    if (container_) {
+        lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (top_bar_) {
+        lv_obj_add_flag(top_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (status_bar_) {
+        lv_obj_add_flag(status_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (content_) {
+        lv_obj_add_flag(content_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (content_left_) {
+        lv_obj_add_flag(content_left_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (content_right_) {
+        lv_obj_add_flag(content_right_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (side_bar_) {
+        lv_obj_add_flag(side_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (low_battery_popup_) {
+        lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (emotion_label_) {
+        lv_obj_add_flag(emotion_label_, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    // Show standby screen
+    lv_obj_remove_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(standby_screen_);  // Move to foreground
+    ESP_LOGI(TAG, "Standby screen shown, calling UpdateStandbyScreen()");
+    UpdateStandbyScreen();
+}
+
+void OledDisplay::HideStandbyScreen() {
+    DisplayLockGuard lock(this);
+
+    if (standby_screen_ != nullptr) {
+        lv_obj_add_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    // Show other UI elements
+    if (container_) {
+        lv_obj_remove_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (top_bar_) {
+        lv_obj_remove_flag(top_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (status_bar_) {
+        lv_obj_remove_flag(status_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (content_) {
+        lv_obj_remove_flag(content_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (content_left_) {
+        lv_obj_remove_flag(content_left_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (content_right_) {
+        lv_obj_remove_flag(content_right_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (side_bar_) {
+        lv_obj_remove_flag(side_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (emotion_label_) {
+        lv_obj_remove_flag(emotion_label_, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void OledDisplay::UpdateStandbyScreen() {
+    DisplayLockGuard lock(this);
+
+    if (standby_screen_ == nullptr || lv_obj_has_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN)) {
+        ESP_LOGW(TAG, "UpdateStandbyScreen skipped - standby_screen_=%p, hidden=%d", 
+                 standby_screen_, standby_screen_ ? lv_obj_has_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN) : 0);
+        return;
+    }
+
+    // Get current time
+    time_t now;
+    struct tm timeinfo;
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    // Log time values for debugging
+    ESP_LOGI(TAG, "UpdateStandbyScreen: year=%d, mon=%d, day=%d, hour=%d, min=%d, sec=%d",
+             timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+             timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+
+    // Update date
+    char date_buf[16];
+    strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &timeinfo);
+    ESP_LOGI(TAG, "Setting date label: %s", date_buf);
+    lv_label_set_text(date_label_, date_buf);
+
+    // Update weekday
+    char weekday_buf[16];
+    strftime(weekday_buf, sizeof(weekday_buf), "%A", &timeinfo);
+    ESP_LOGI(TAG, "Setting weekday label: %s", weekday_buf);
+    lv_label_set_text(weekday_label_, weekday_buf);
+
+    // Update time
+    char time_buf[16];
+    strftime(time_buf, sizeof(time_buf), "%H:%M", &timeinfo);
+    ESP_LOGI(TAG, "Setting time label: '%s' (time_label_=%p)", time_buf, time_label_);
+    if (time_label_ != nullptr) {
+        lv_label_set_text(time_label_, time_buf);
+        // Force refresh
+        lv_obj_invalidate(time_label_);
+        ESP_LOGI(TAG, "Time label text set and invalidated");
+    } else {
+        ESP_LOGE(TAG, "time_label_ is NULL!");
+    }
+
+    // Update temperature and humidity
+    try {
+        // Try to get sensor data
+        auto& sensor_manager = SensorManager::GetInstance();
+        std::string temp_humidity_str = sensor_manager.GetTemperatureHumidityString();
+        ESP_LOGI(TAG, "Setting temp_humidity label: %s", temp_humidity_str.c_str());
+        lv_label_set_text(temp_humidity_label_, temp_humidity_str.c_str());
+    } catch (...) {
+        // If sensor manager is not initialized, show default value
+        ESP_LOGW(TAG, "Sensor manager not available, showing default value");
+        lv_label_set_text(temp_humidity_label_, "--.-°C / --.-%");
+    }
 }

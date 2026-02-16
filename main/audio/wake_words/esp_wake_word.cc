@@ -35,7 +35,7 @@ bool EspWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
     }
     char *model_name = wakenet_model_->model_name[0];
     wakenet_iface_ = (esp_wn_iface_t*)esp_wn_handle_from_name(model_name);
-    wakenet_data_ = wakenet_iface_->create(model_name, DET_MODE_95);
+    wakenet_data_ = wakenet_iface_->create(model_name, DET_MODE_90);  // Use 90% mode for higher sensitivity
 
     int frequency = wakenet_iface_->get_samp_rate(wakenet_data_);
     int audio_chunksize = wakenet_iface_->get_samp_chunksize(wakenet_data_);

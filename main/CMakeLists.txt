@@ -29,6 +29,8 @@ set(SOURCES "audio/audio_codec.cc"
             "protocols/protocol.cc"
             "protocols/mqtt_protocol.cc"
             "protocols/websocket_protocol.cc"
+            "dht20/dht20.cc"
+            "sensors/sensor_manager.cc"
             "mcp_server.cc"
             "system_info.cc"
             "application.cc"
@@ -39,7 +41,7 @@ set(SOURCES "audio/audio_codec.cc"
             "main.cc"
             )
 
-set(INCLUDE_DIRS "." "display" "display/lvgl_display" "display/lvgl_display/jpg" "audio" "audio/demuxer" "protocols")
+set(INCLUDE_DIRS "." "display" "display/lvgl_display" "display/lvgl_display/jpg" "audio" "audio/demuxer" "protocols" "dht20" "sensors")
 
 # Add board common files
 list(APPEND SOURCES
@@ -449,8 +451,8 @@ elseif(CONFIG_BOARD_TYPE_ESP_P4_FUNCTION_EV_BOARD)
     set(BOARD_TYPE "esp-p4-function-ev-board")
 elseif(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI_LCD)
     set(BOARD_TYPE "bread-compact-wifi-lcd")
-    set(BUILTIN_TEXT_FONT font_puhui_basic_16_4)
-    set(BUILTIN_ICON_FONT font_awesome_16_4)
+    set(BUILTIN_TEXT_FONT font_puhui_20_4)
+    set(BUILTIN_ICON_FONT font_awesome_20_4)
     set(DEFAULT_EMOJI_COLLECTION twemoji_32)
 elseif(CONFIG_BOARD_TYPE_TUDOUZI)
     set(BOARD_TYPE "tudouzi")

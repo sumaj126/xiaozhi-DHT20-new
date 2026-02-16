@@ -43,6 +43,9 @@ public:
     virtual void SetupUI() { 
         setup_ui_called_ = true;
     }
+    virtual void ShowStandbyScreen() {}
+    virtual void UpdateStandbyScreen() {}
+    virtual void HideStandbyScreen() {}
 
     inline int width() const { return width_; }
     inline int height() const { return height_; }

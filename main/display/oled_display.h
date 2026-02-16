@@ -36,6 +36,17 @@ public:
     virtual void SetChatMessage(const char* role, const char* content) override;
     virtual void SetEmotion(const char* emotion) override;
     virtual void SetTheme(Theme* theme) override;
+    virtual void ShowStandbyScreen() override;
+    virtual void UpdateStandbyScreen() override;
+    void HideStandbyScreen();
+
+private:
+    void SetupStandbyScreen();
+    lv_obj_t* standby_screen_ = nullptr;
+    lv_obj_t* date_label_ = nullptr;
+    lv_obj_t* weekday_label_ = nullptr;
+    lv_obj_t* time_label_ = nullptr;
+    lv_obj_t* temp_humidity_label_ = nullptr;
 };
 
 #endif // OLED_DISPLAY_H

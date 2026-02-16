@@ -3,6 +3,7 @@
 #include "settings.h"
 #include "lvgl_theme.h"
 #include "assets/lang_config.h"
+#include "sensors/sensor_manager.h"
 
 #include <vector>
 #include <algorithm>
@@ -13,6 +14,7 @@
 #include <esp_psram.h>
 #include <cstring>
 #include <src/misc/cache/lv_cache.h>
+#include <ctime>
 
 #include "board.h"
 
@@ -495,6 +497,9 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_text_font(emoji_label_, large_icon_font, 0);
     lv_obj_set_style_text_color(emoji_label_, lvgl_theme->text_color(), 0);
     lv_label_set_text(emoji_label_, FONT_AWESOME_MICROCHIP_AI);
+
+    // Setup standby screen
+    SetupStandbyScreen();
 }
 #if CONFIG_IDF_TARGET_ESP32P4
 #define  MAX_MESSAGES 40
@@ -966,6 +971,9 @@ void LcdDisplay::SetupUI() {
     lv_obj_set_style_text_color(low_battery_label_, lv_color_white(), 0);
     lv_obj_center(low_battery_label_);
     lv_obj_add_flag(low_battery_popup_, LV_OBJ_FLAG_HIDDEN);
+
+    // Setup standby screen
+    SetupStandbyScreen();
 }
 
 void LcdDisplay::SetPreviewImage(std::unique_ptr<LvglImage> image) {
@@ -1026,6 +1034,221 @@ void LcdDisplay::ClearChatMessages() {
     }
 }
 #endif
+
+void LcdDisplay::SetupStandbyScreen() {
+    DisplayLockGuard lock(this);
+
+    auto lvgl_theme = static_cast<LvglTheme*>(current_theme_);
+    auto text_font = lvgl_theme->text_font()->font();
+    auto icon_font = lvgl_theme->icon_font()->font();
+
+    auto screen = lv_screen_active();
+
+    // Create standby screen container
+    standby_screen_ = lv_obj_create(screen);
+    lv_obj_set_size(standby_screen_, LV_HOR_RES, LV_VER_RES);
+    lv_obj_set_style_radius(standby_screen_, 0, 0);
+    lv_obj_set_style_bg_opa(standby_screen_, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(standby_screen_, lvgl_theme->background_color(), 0);
+    lv_obj_set_style_border_width(standby_screen_, 0, 0);
+    lv_obj_set_style_pad_all(standby_screen_, 0, 0);
+    lv_obj_set_scrollbar_mode(standby_screen_, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_align(standby_screen_, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN);
+
+    // Date label (top center) - 2.5x scale
+    date_label_ = lv_label_create(standby_screen_);
+    lv_obj_set_style_text_font(date_label_, text_font, 0);
+    lv_obj_set_style_text_color(date_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_align(date_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_transform_scale(date_label_, 250, 0);
+    lv_label_set_text(date_label_, "2023-01-01");
+    lv_obj_align(date_label_, LV_ALIGN_TOP_MID, 0, 6);
+
+    // Weekday label (below date) - 2.5x scale
+    weekday_label_ = lv_label_create(standby_screen_);
+    lv_obj_set_style_text_font(weekday_label_, text_font, 0);
+    lv_obj_set_style_text_color(weekday_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_align(weekday_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_transform_scale(weekday_label_, 250, 0);
+    lv_label_set_text(weekday_label_, "周一");
+    lv_obj_align(weekday_label_, LV_ALIGN_TOP_MID, 0, 34);
+
+    // Time label (center, scaled 4x)
+    time_label_ = lv_label_create(standby_screen_);
+    lv_obj_set_style_text_font(time_label_, text_font, 0);
+    lv_obj_set_style_text_color(time_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_text_align(time_label_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_transform_scale(time_label_, 400, 0);
+    lv_label_set_text(time_label_, "12:00:00");
+    lv_obj_align(time_label_, LV_ALIGN_CENTER, -20, 0);
+
+    // Temperature (bottom left) - 2.5x scale
+    temp_icon_ = lv_label_create(standby_screen_);
+    lv_label_set_text(temp_icon_, LV_SYMBOL_IMAGE);
+    lv_obj_set_style_text_font(temp_icon_, icon_font, 0);
+    lv_obj_set_style_text_color(temp_icon_, lv_color_hex(0xFF5722), 0);
+    lv_obj_set_style_transform_scale(temp_icon_, 250, 0);
+    lv_obj_align(temp_icon_, LV_ALIGN_BOTTOM_LEFT, 6, -8);
+
+    temperature_label_ = lv_label_create(standby_screen_);
+    lv_label_set_text(temperature_label_, "--.-°C");
+    lv_obj_set_style_text_font(temperature_label_, text_font, 0);
+    lv_obj_set_style_text_color(temperature_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_transform_scale(temperature_label_, 250, 0);
+    lv_obj_align_to(temperature_label_, temp_icon_, LV_ALIGN_OUT_RIGHT_MID, 4, 0);
+
+    // Humidity (bottom right) - 2.5x scale
+    humidity_icon_ = lv_label_create(standby_screen_);
+    lv_label_set_text(humidity_icon_, LV_SYMBOL_SETTINGS);
+    lv_obj_set_style_text_font(humidity_icon_, icon_font, 0);
+    lv_obj_set_style_text_color(humidity_icon_, lv_color_hex(0x2196F3), 0);
+    lv_obj_set_style_transform_scale(humidity_icon_, 250, 0);
+    lv_obj_align(humidity_icon_, LV_ALIGN_BOTTOM_RIGHT, -6, -8);
+
+    humidity_label_ = lv_label_create(standby_screen_);
+    lv_label_set_text(humidity_label_, "--.-%");
+    lv_obj_set_style_text_font(humidity_label_, text_font, 0);
+    lv_obj_set_style_text_color(humidity_label_, lvgl_theme->text_color(), 0);
+    lv_obj_set_style_transform_scale(humidity_label_, 250, 0);
+    lv_obj_align_to(humidity_label_, humidity_icon_, LV_ALIGN_OUT_LEFT_MID, -4, 0);
+}
+
+void LcdDisplay::ShowStandbyScreen() {
+    DisplayLockGuard lock(this);
+
+    if (standby_screen_ == nullptr) {
+        SetupStandbyScreen();
+    }
+
+    // Hide other UI elements
+    if (container_) {
+        lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (top_bar_) {
+        lv_obj_add_flag(top_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (status_bar_) {
+        lv_obj_add_flag(status_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (content_) {
+        lv_obj_add_flag(content_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (side_bar_) {
+        lv_obj_add_flag(side_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (bottom_bar_) {
+        lv_obj_add_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (emoji_box_) {
+        lv_obj_add_flag(emoji_box_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (emoji_label_) {
+        lv_obj_add_flag(emoji_label_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (emoji_image_) {
+        lv_obj_add_flag(emoji_image_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (preview_image_) {
+        lv_obj_add_flag(preview_image_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (chat_message_label_) {
+        lv_obj_add_flag(chat_message_label_, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    // Show standby screen
+    lv_obj_remove_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN);
+    UpdateStandbyScreen();
+}
+
+void LcdDisplay::HideStandbyScreen() {
+    DisplayLockGuard lock(this);
+
+    if (standby_screen_ != nullptr) {
+        lv_obj_add_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    // Show other UI elements
+    if (container_) {
+        lv_obj_remove_flag(container_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (top_bar_) {
+        lv_obj_remove_flag(top_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (status_bar_) {
+        lv_obj_remove_flag(status_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (content_) {
+        lv_obj_remove_flag(content_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (side_bar_) {
+        lv_obj_remove_flag(side_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (bottom_bar_) {
+        lv_obj_remove_flag(bottom_bar_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (emoji_box_) {
+        lv_obj_remove_flag(emoji_box_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (emoji_label_) {
+        lv_obj_remove_flag(emoji_label_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (emoji_image_) {
+        lv_obj_remove_flag(emoji_image_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (preview_image_) {
+        lv_obj_remove_flag(preview_image_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (chat_message_label_) {
+        lv_obj_remove_flag(chat_message_label_, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void LcdDisplay::UpdateStandbyScreen() {
+    DisplayLockGuard lock(this);
+
+    if (standby_screen_ == nullptr || lv_obj_has_flag(standby_screen_, LV_OBJ_FLAG_HIDDEN)) {
+        return;
+    }
+
+    // Get current time
+    time_t now;
+    struct tm timeinfo;
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    // Update date
+    char date_buf[16];
+    strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &timeinfo);
+    lv_label_set_text(date_label_, date_buf);
+
+    // Update weekday (Chinese short format)
+    const char* weekdays_cn[] = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
+    lv_label_set_text(weekday_label_, weekdays_cn[timeinfo.tm_wday]);
+
+    // Update time (HH:MM:SS format)
+    char time_buf[16];
+    strftime(time_buf, sizeof(time_buf), "%H:%M:%S", &timeinfo);
+    lv_label_set_text(time_label_, time_buf);
+
+    // Update temperature and humidity
+    try {
+        auto& sensor_manager = SensorManager::GetInstance();
+        float temperature, humidity;
+        if (sensor_manager.ReadTemperatureHumidity(temperature, humidity)) {
+            char temp_buf[16];
+            snprintf(temp_buf, sizeof(temp_buf), "%.1f°C", temperature);
+            lv_label_set_text(temperature_label_, temp_buf);
+            
+            char hum_buf[16];
+            snprintf(hum_buf, sizeof(hum_buf), "%.1f%%", humidity);
+            lv_label_set_text(humidity_label_, hum_buf);
+        }
+    } catch (...) {
+        lv_label_set_text(temperature_label_, "--.-°C");
+        lv_label_set_text(humidity_label_, "--.-%");
+    }
+}
 
 void LcdDisplay::SetEmotion(const char* emotion) {
     if (!setup_ui_called_) {

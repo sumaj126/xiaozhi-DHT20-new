@@ -5,6 +5,7 @@
 #include <freertos/event_groups.h>
 #include <freertos/task.h>
 #include <esp_timer.h>
+#include <driver/i2c_master.h>
 
 #include <string>
 #include <mutex>

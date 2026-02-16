@@ -9,6 +9,7 @@
 #include "mcp_server.h"
 #include "assets.h"
 #include "settings.h"
+#include "sensors/sensor_manager.h"
 
 #include <cstring>
 #include <esp_log.h>
@@ -59,6 +60,7 @@ bool Application::SetDeviceState(DeviceState state) {
 }
 
 void Application::Initialize() {
+    ESP_LOGI(TAG, "=== Application::Initialize() started ===");
     auto& board = Board::GetInstance();
     SetDeviceState(kDeviceStateStarting);
 
@@ -67,6 +69,36 @@ void Application::Initialize() {
     display->SetupUI();
     // Print board name/version info
     display->SetChatMessage("system", SystemInfo::GetUserAgent().c_str());
+
+    // Initialize I2C bus for DHT20 sensor
+    try {
+        ESP_LOGI(TAG, "Initializing I2C bus for DHT20 sensor");
+        i2c_master_bus_config_t i2c_bus_config;
+        memset(&i2c_bus_config, 0, sizeof(i2c_bus_config));
+        i2c_bus_config.i2c_port = I2C_NUM_0;
+        i2c_bus_config.scl_io_num = GPIO_NUM_8;  // SCL pin
+        i2c_bus_config.sda_io_num = GPIO_NUM_9;  // SDA pin
+        i2c_bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
+        i2c_bus_config.glitch_ignore_cnt = 7;
+        i2c_bus_config.flags.enable_internal_pullup = true;
+        i2c_master_bus_handle_t i2c_bus;
+        esp_err_t err = i2c_new_master_bus(&i2c_bus_config, &i2c_bus);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to create I2C bus: %d", err);
+        } else {
+            ESP_LOGI(TAG, "I2C bus created successfully");
+            // Initialize sensor manager
+            auto& sensor_manager = SensorManager::GetInstance();
+            if (!sensor_manager.Initialize(i2c_bus)) {
+                ESP_LOGE(TAG, "Failed to initialize sensor manager");
+            } else {
+                ESP_LOGI(TAG, "Sensor manager initialized successfully");
+            }
+        }
+    } catch (...) {
+        ESP_LOGE(TAG, "Exception during I2C initialization");
+    }
+    ESP_LOGI(TAG, "Continuing with application initialization");
 
     // Setup the audio service
     auto codec = board.GetAudioCodec();
@@ -160,6 +192,7 @@ void Application::Initialize() {
 
     // Update the status bar immediately to show the network state
     display->UpdateStatusBar(true);
+    ESP_LOGI(TAG, "=== Application::Initialize() completed ===");
 }
 
 void Application::Run() {
@@ -249,6 +282,11 @@ void Application::Run() {
             clock_ticks_++;
             auto display = Board::GetInstance().GetDisplay();
             display->UpdateStatusBar();
+        
+            // Update standby screen every second if in idle state
+            if (GetDeviceState() == kDeviceStateIdle) {
+                display->UpdateStandbyScreen();
+            }
         
             // Print debug info every 10 seconds
             if (clock_ticks_ % 10 == 0) {
@@ -869,15 +907,21 @@ void Application::HandleStateChangedEvent() {
             display->SetEmotion("neutral"); // Then set emotion (wechat mode checks child count)
             audio_service_.EnableVoiceProcessing(false);
             audio_service_.EnableWakeWordDetection(true);
+            // Show standby screen
+            display->ShowStandbyScreen();
             break;
         case kDeviceStateConnecting:
             display->SetStatus(Lang::Strings::CONNECTING);
             display->SetEmotion("neutral");
             display->SetChatMessage("system", "");
+            // Hide standby screen
+            display->HideStandbyScreen();
             break;
         case kDeviceStateListening:
             display->SetStatus(Lang::Strings::LISTENING);
             display->SetEmotion("neutral");
+            // Hide standby screen
+            display->HideStandbyScreen();
 
             // Make sure the audio processor is running
             if (play_popup_on_listening_ || !audio_service_.IsAudioProcessorRunning()) {
@@ -908,6 +952,8 @@ void Application::HandleStateChangedEvent() {
             break;
         case kDeviceStateSpeaking:
             display->SetStatus(Lang::Strings::SPEAKING);
+            // Hide standby screen
+            display->HideStandbyScreen();
 
             if (listening_mode_ != kListeningModeRealtime) {
                 audio_service_.EnableVoiceProcessing(false);
@@ -917,8 +963,17 @@ void Application::HandleStateChangedEvent() {
             audio_service_.ResetDecoder();
             break;
         case kDeviceStateWifiConfiguring:
+            // Hide standby screen
+            display->HideStandbyScreen();
             audio_service_.EnableVoiceProcessing(false);
             audio_service_.EnableWakeWordDetection(false);
+            break;
+        case kDeviceStateUpgrading:
+        case kDeviceStateActivating:
+        case kDeviceStateAudioTesting:
+        case kDeviceStateFatalError:
+            // Hide standby screen
+            display->HideStandbyScreen();
             break;
         default:
             // Do nothing

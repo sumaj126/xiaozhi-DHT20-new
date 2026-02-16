@@ -35,10 +35,22 @@ protected:
     esp_timer_handle_t preview_timer_ = nullptr;
     std::unique_ptr<LvglImage> preview_image_cached_ = nullptr;
     bool hide_subtitle_ = false;  // Control whether to hide chat messages/subtitles
+    
+    // Standby screen elements
+    lv_obj_t* standby_screen_ = nullptr;
+    lv_obj_t* date_label_ = nullptr;
+    lv_obj_t* weekday_label_ = nullptr;
+    lv_obj_t* time_label_ = nullptr;
+    lv_obj_t* temp_humidity_label_ = nullptr;
+    lv_obj_t* temperature_label_ = nullptr;
+    lv_obj_t* humidity_label_ = nullptr;
+    lv_obj_t* temp_icon_ = nullptr;
+    lv_obj_t* humidity_icon_ = nullptr;
 
     void InitializeLcdThemes();
     virtual bool Lock(int timeout_ms = 0) override;
     virtual void Unlock() override;
+    void SetupStandbyScreen();
 
 protected:
     // Add protected constructor
@@ -56,6 +68,11 @@ public:
     
     // Set whether to hide chat messages/subtitles
     void SetHideSubtitle(bool hide);
+    
+    // Standby screen functions
+    virtual void ShowStandbyScreen() override;
+    virtual void UpdateStandbyScreen() override;
+    virtual void HideStandbyScreen() override;
 };
 
 // SPI LCD display
