@@ -63,13 +63,16 @@ Application::Application() {
             Alert("提醒", message.c_str(), "bell", "");
             ESP_LOGI(TAG, "Alert notification shown");
             
-            // Play local reminder sounds (using the loud success sound)
-            ESP_LOGI(TAG, "Playing local reminder sounds");
-            
-            // Play the loud success sound multiple times for better notification
-            for (int i = 0; i < 5; i++) {
-                PlaySound(Lang::Sounds::OGG_SUCCESS);
-                vTaskDelay(pdMS_TO_TICKS(300));
+            // Try to use WakeWordInvoke-like approach to trigger server TTS
+            if (protocol_ && GetDeviceState() == kDeviceStateIdle) {
+                ESP_LOGI(TAG, "Triggering server TTS via WakeWordInvoke");
+                
+                // Use WakeWordInvoke directly with reminder text
+                std::string tts_text = "提醒时间到了，" + message;
+                WakeWordInvoke(tts_text);
+            } else {
+                // Fallback to local sounds
+                PlayLocalReminderSounds();
             }
             
             ESP_LOGI(TAG, "Reminder notification completed");
@@ -1262,6 +1265,14 @@ void Application::SetReminder(int minutes, const std::string& message) {
     
     int seconds = minutes * 60;
     SetReminderBySeconds(seconds, message);
+}
+
+void Application::PlayLocalReminderSounds() {
+    ESP_LOGI(TAG, "Playing local reminder sounds");
+    for (int i = 0; i < 5; i++) {
+        PlaySound(Lang::Sounds::OGG_SUCCESS);
+        vTaskDelay(pdMS_TO_TICKS(300));
+    }
 }
 
 void Application::SetReminderBySeconds(int seconds, const std::string& message) {

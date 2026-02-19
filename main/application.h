@@ -121,6 +121,7 @@ public:
     void SetDateTimeReminder(int year, int month, int day, int hour, int minute, const std::string& message);
     void CancelReminder();
     bool IsReminderSet() const;
+    void PlayLocalReminderSounds();
     
     /**
      * Reset protocol resources (thread-safe)
