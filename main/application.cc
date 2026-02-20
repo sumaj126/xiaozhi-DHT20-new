@@ -1511,12 +1511,12 @@ void Application::SetDateTimeReminder(int year, int month, int day, int hour, in
 }
 
 void Application::CancelReminder() {
-    reminder_timer_.CancelReminder();
+    reminder_timer_.CancelAllReminders();
     Alert("提醒", "已取消提醒", "check", "");
 }
 
 bool Application::IsReminderSet() const {
-    return reminder_timer_.IsReminderSet();
+    return reminder_timer_.HasReminders();
 }
 
 
