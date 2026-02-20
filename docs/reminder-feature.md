@@ -2,7 +2,13 @@
 
 ## 功能概述
 
-小智AI聊天机器人支持多种定时提醒功能，包括相对时间提醒、指定时间提醒、工作日提醒和重复提醒。
+小智AI聊天机器人支持多种定时提醒功能，包括相对时间提醒、指定时间提醒、工作日提醒和重复提醒。**最多支持10个提醒同时存在**。
+
+## 提醒数量限制
+
+- **最大提醒数量**：10个
+- **提醒ID**：每个提醒都有唯一ID，设置时会显示
+- **提醒管理**：支持查看列表、按ID取消、取消全部
 
 ## 支持的提醒类型
 
@@ -61,6 +67,49 @@
 - "周三下午3点提醒我开会"
 - "周五晚上8点提醒我看电影"
 
+## 提醒管理命令
+
+### 查看提醒列表
+
+查看当前设置的所有提醒。
+
+**示例命令：**
+- "查看提醒"
+- "提醒列表"
+- "有什么提醒"
+- "几个提醒"
+- "多少提醒"
+
+### 取消所有提醒
+
+取消当前设置的所有提醒。
+
+**示例命令：**
+- "取消所有提醒"
+- "取消全部提醒"
+- "删除所有提醒"
+- "删除全部提醒"
+- "清除所有提醒"
+- "清除全部提醒"
+
+### 取消特定提醒
+
+根据提醒ID取消特定提醒。
+
+**示例命令：**
+- "取消第1个提醒"
+- "取消提醒1"
+- "取消第一个提醒"
+
+### 取消提醒
+
+简单的取消提醒命令。
+
+**示例命令：**
+- "取消提醒"
+- "删除提醒"
+- "不要提醒"
+
 ## 支持的时间格式
 
 ### 时间表达
@@ -116,6 +165,19 @@ enum class ReminderType {
 };
 ```
 
+#### ReminderCommandType 枚举
+
+```cpp
+enum class ReminderCommandType {
+    kNone,       // 无命令
+    kSet,        // 设置提醒
+    kCancel,     // 取消提醒
+    kCancelAll,  // 取消所有提醒
+    kList,       // 列出提醒
+    kCancelById  // 按ID取消提醒
+};
+```
+
 #### ReminderSchedule 结构体
 
 ```cpp
@@ -125,6 +187,22 @@ struct ReminderSchedule {
     int hour, minute;
     std::vector<int> weekdays;  // 0=周日, 1=周一, ..., 6=周六
     std::string message;
+    int reminder_id;  // 用于按ID取消
+};
+```
+
+#### ReminderItem 结构体
+
+```cpp
+struct ReminderItem {
+    int id;
+    ReminderType type;
+    int year, month, day;
+    int hour, minute;
+    std::vector<int> weekdays;
+    std::string message;
+    esp_timer_handle_t timer;
+    bool enabled;
 };
 ```
 
@@ -139,6 +217,9 @@ bool ParseDateTimeReminderCommand(const std::string& command, int& year, int& mo
 
 // 解析高级提醒（支持重复）
 bool ParseAdvancedReminderCommand(const std::string& command, ReminderSchedule& schedule);
+
+// 解析提醒管理命令（取消、列表等）
+ReminderCommandType ParseReminderManagementCommand(const std::string& command, ReminderSchedule& schedule);
 ```
 
 ## 提醒触发机制
@@ -153,8 +234,9 @@ bool ParseAdvancedReminderCommand(const std::string& command, ReminderSchedule& 
 
 1. **时间同步**：确保设备已连接网络并同步时间
 2. **重复提醒**：重复提醒会在每个指定时间自动触发
-3. **提醒覆盖**：设置新提醒会取消之前的提醒
-4. **电源管理**：设备休眠时提醒仍然有效
+3. **提醒数量**：最多支持10个提醒同时存在
+4. **提醒ID**：设置提醒时会显示ID，可用于取消特定提醒
+5. **电源管理**：设备休眠时提醒仍然有效
 
 ## 常见问题
 
@@ -167,13 +249,32 @@ A: 请检查：
 
 ### Q: 如何取消提醒？
 
-A: 目前设置新提醒会自动取消之前的提醒。后续版本会添加取消提醒的语音命令。
+A: 可以使用以下命令：
+- "取消所有提醒" - 取消全部
+- "取消第1个提醒" - 按ID取消
+- "查看提醒" - 先查看ID再取消
 
 ### Q: 重复提醒会一直触发吗？
 
-A: 是的，重复提醒会按照设定的时间一直触发，直到设置新的提醒。
+A: 是的，重复提醒会按照设定的时间一直触发，直到手动取消。
+
+### Q: 最多可以设置多少个提醒？
+
+A: 最多支持10个提醒同时存在。达到上限后，设置新提醒会提示失败。
+
+### Q: 如何查看当前有哪些提醒？
+
+A: 说"查看提醒"或"提醒列表"，会显示所有提醒的ID、时间和内容。
 
 ## 更新日志
+
+### v1.1.0 (2026-02-20)
+- 新增多提醒支持（最多10个）
+- 新增提醒ID系统
+- 新增查看提醒列表功能
+- 新增按ID取消提醒功能
+- 新增取消所有提醒功能
+- 优化提醒管理命令解析
 
 ### v1.0.0 (2026-02-20)
 - 实现相对时间提醒
