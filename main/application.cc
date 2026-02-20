@@ -727,8 +727,6 @@ void Application::InitializeProtocol() {
                         ESP_LOGI(TAG, "No reminder command found in: %s", user_text.c_str());
                         break;
                 }
-                    }
-                }
                 
                 Schedule([display, message = std::string(user_text)]() {
                     display->SetChatMessage("user", message.c_str());
