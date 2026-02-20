@@ -121,7 +121,11 @@ public:
     void SetReminderBySeconds(int seconds, const std::string& message);
     void SetDateTimeReminder(int year, int month, int day, int hour, int minute, const std::string& message);
     void CancelReminder();
+    void CancelAllReminders();
+    void CancelReminderById(int id);
     bool IsReminderSet() const;
+    int GetReminderCount() const;
+    void ListReminders();
     void PlayLocalReminderSounds();
     
     /**

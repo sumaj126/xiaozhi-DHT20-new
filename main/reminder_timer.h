@@ -3,8 +3,22 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <map>
 #include <esp_timer.h>
 #include "voice_command_parser.h"
+
+#define MAX_REMINDERS 10
+
+struct ReminderItem {
+    int id;
+    ReminderType type;
+    int year, month, day;
+    int hour, minute;
+    std::vector<int> weekdays;
+    std::string message;
+    esp_timer_handle_t timer;
+    bool enabled;
+};
 
 class ReminderTimer {
 public:
@@ -12,42 +26,47 @@ public:
     ~ReminderTimer();
 
     // Set a relative time reminder (seconds from now)
-    void SetReminder(int seconds, const std::string& message);
+    int SetReminder(int seconds, const std::string& message);
     
     // Set an absolute time reminder
-    void SetReminder(int year, int month, int day, int hour, int minute, const std::string& message);
+    int SetReminder(int year, int month, int day, int hour, int minute, const std::string& message);
     
     // Set a repeating reminder
-    void SetRepeatingReminder(int hour, int minute, const std::vector<int>& weekdays, ReminderType type, const std::string& message);
+    int SetRepeatingReminder(int hour, int minute, const std::vector<int>& weekdays, ReminderType type, const std::string& message);
     
     // Set reminder from schedule
-    void SetReminderFromSchedule(const ReminderSchedule& schedule);
+    int SetReminderFromSchedule(const ReminderSchedule& schedule);
     
-    void CancelReminder();
-    bool IsReminderSet() const;
+    // Cancel a specific reminder by ID
+    bool CancelReminder(int id);
+    
+    // Cancel all reminders
+    void CancelAllReminders();
+    
+    // Get reminder count
+    int GetReminderCount() const;
+    
+    // Get all reminders
+    const std::map<int, ReminderItem>& GetAllReminders() const;
+    
+    // Get reminder by ID
+    const ReminderItem* GetReminder(int id) const;
+    
+    // Check if any reminder is set
+    bool HasReminders() const;
 
     // Callback for when reminder triggers
-    void OnReminderTriggered(std::function<void(const std::string& message)> callback);
+    void OnReminderTriggered(std::function<void(const std::string& message, int id)> callback);
 
 private:
-    void CheckTimer();
-    void CalculateNextTrigger();
+    void TriggerReminder(int id);
+    void CalculateNextTrigger(int id);
     int CalculateSecondsUntilTime(int hour, int minute, const std::vector<int>& weekdays);
+    int GenerateId();
+    void StartTimerForReminder(ReminderItem& reminder, int seconds);
 
-    esp_timer_handle_t reminder_timer_ = nullptr;
-    esp_timer_handle_t repeating_check_timer_ = nullptr;
-    bool enabled_ = false;
-    int seconds_remaining_ = 0;
-    std::string reminder_message_;
+    std::map<int, ReminderItem> reminders_;
+    int next_id_ = 1;
     
-    // For repeating reminders
-    ReminderType reminder_type_ = ReminderType::kOnce;
-    int reminder_hour_ = 0;
-    int reminder_minute_ = 0;
-    std::vector<int> reminder_weekdays_;
-    int reminder_year_ = 0;
-    int reminder_month_ = 0;
-    int reminder_day_ = 0;
-
-    std::function<void(const std::string& message)> on_reminder_triggered_;
+    std::function<void(const std::string& message, int id)> on_reminder_triggered_;
 };

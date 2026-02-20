@@ -476,3 +476,88 @@ bool VoiceCommandParser::ParseAdvancedReminderCommand(const std::string& command
     
     return true;
 }
+
+ReminderCommandType VoiceCommandParser::ParseReminderManagementCommand(const std::string& command, ReminderSchedule& schedule) {
+    ESP_LOGI(TAG, "Parsing reminder management command: %s", command.c_str());
+    
+    std::string cmd = command;
+    
+    // Check for "取消所有提醒" or "取消全部提醒"
+    if (cmd.find("取消所有") != std::string::npos || 
+        cmd.find("取消全部") != std::string::npos ||
+        cmd.find("删除所有") != std::string::npos ||
+        cmd.find("删除全部") != std::string::npos ||
+        cmd.find("清除所有") != std::string::npos ||
+        cmd.find("清除全部") != std::string::npos) {
+        ESP_LOGI(TAG, "Parsed cancel all reminders command");
+        return ReminderCommandType::kCancelAll;
+    }
+    
+    // Check for "查看提醒" or "提醒列表"
+    if (cmd.find("查看提醒") != std::string::npos ||
+        cmd.find("提醒列表") != std::string::npos ||
+        cmd.find("有什么提醒") != std::string::npos ||
+        cmd.find("几个提醒") != std::string::npos ||
+        cmd.find("多少提醒") != std::string::npos) {
+        ESP_LOGI(TAG, "Parsed list reminders command");
+        return ReminderCommandType::kList;
+    }
+    
+    // Check for "取消第X个提醒" or "取消提醒X"
+    size_t cancel_pos = cmd.find("取消第");
+    if (cancel_pos != std::string::npos) {
+        // Find the number after "第"
+        size_t num_start = cancel_pos + 6;  // "取消第" is 6 bytes in UTF-8
+        size_t num_end = num_start;
+        while (num_end < cmd.length() && (cmd[num_end] & 0x80)) {
+            num_end += 3;  // UTF-8 Chinese character
+        }
+        if (num_end > num_start) {
+            std::string num_str = cmd.substr(num_start, num_end - num_start);
+            int id = ParseChineseNumber(num_str);
+            if (id > 0) {
+                schedule.reminder_id = id;
+                ESP_LOGI(TAG, "Parsed cancel reminder by ID: %d", id);
+                return ReminderCommandType::kCancelById;
+            }
+        }
+    }
+    
+    // Check for "取消提醒X" pattern
+    cancel_pos = cmd.find("取消提醒");
+    if (cancel_pos != std::string::npos) {
+        size_t num_start = cancel_pos + 12;  // "取消提醒" is 12 bytes in UTF-8
+        size_t num_end = num_start;
+        while (num_end < cmd.length() && (cmd[num_end] & 0x80)) {
+            num_end += 3;
+        }
+        if (num_end > num_start) {
+            std::string num_str = cmd.substr(num_start, num_end - num_start);
+            int id = ParseChineseNumber(num_str);
+            if (id > 0) {
+                schedule.reminder_id = id;
+                ESP_LOGI(TAG, "Parsed cancel reminder by ID: %d", id);
+                return ReminderCommandType::kCancelById;
+            }
+        }
+    }
+    
+    // Check for "取消提醒" (cancel last/current reminder)
+    if (cmd.find("取消提醒") != std::string::npos ||
+        cmd.find("删除提醒") != std::string::npos ||
+        cmd.find("不要提醒") != std::string::npos) {
+        ESP_LOGI(TAG, "Parsed cancel reminder command");
+        return ReminderCommandType::kCancel;
+    }
+    
+    // Check if it's a set reminder command
+    if (cmd.find("提醒") != std::string::npos || 
+        cmd.find("叫") != std::string::npos ||
+        cmd.find("通知") != std::string::npos) {
+        if (ParseAdvancedReminderCommand(cmd, schedule)) {
+            return ReminderCommandType::kSet;
+        }
+    }
+    
+    return ReminderCommandType::kNone;
+}

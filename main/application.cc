@@ -49,13 +49,13 @@ Application::Application() {
     
     // Initialize reminder timer
     ESP_LOGI(TAG, "Initializing reminder timer callback");
-    reminder_timer_.OnReminderTriggered([this](const std::string& message) {
+    reminder_timer_.OnReminderTriggered([this](const std::string& message, int id) {
         ESP_LOGI(TAG, "=== REMINDER CALLBACK INVOKED ===");
-        ESP_LOGI(TAG, "Reminder triggered! Message: %s", message.c_str());
+        ESP_LOGI(TAG, "Reminder %d triggered! Message: %s", id, message.c_str());
         
         // Schedule the reminder notification to run on the main task
         ESP_LOGI(TAG, "Scheduling reminder notification to main task");
-        Schedule([this, message]() {
+        Schedule([this, message, id]() {
             ESP_LOGI(TAG, "=== SCHEDULED TASK EXECUTING ===");
             ESP_LOGI(TAG, "Executing reminder notification on main task");
             
@@ -641,62 +641,92 @@ void Application::InitializeProtocol() {
                 std::string user_text = text->valuestring;
                 
                 // Parse reminder commands
-                std::string reminder_message;
-                            
                 ESP_LOGI(TAG, "Parsing reminder command: %s", user_text.c_str());
                 
-                // Try to parse advanced reminder command first
+                // Use the unified reminder command parser
                 ReminderSchedule schedule;
-                if (VoiceCommandParser::ParseAdvancedReminderCommand(user_text, schedule)) {
-                    ESP_LOGI(TAG, "Parsed advanced reminder: type=%d, time=%02d:%02d, message: %s",
-                             (int)schedule.type, schedule.hour, schedule.minute, schedule.message.c_str());
-                    // Set reminder from schedule
-                    Schedule([this, schedule]() {
-                        reminder_timer_.SetReminderFromSchedule(schedule);
-                        
-                        // Show confirmation
-                        char buffer[128];
-                        switch (schedule.type) {
-                            case ReminderType::kOnce:
-                                if (schedule.year > 0) {
-                                    snprintf(buffer, sizeof(buffer), "已设置提醒：%04d-%02d-%02d %02d:%02d %s",
-                                             schedule.year, schedule.month, schedule.day,
-                                             schedule.hour, schedule.minute, schedule.message.c_str());
-                                } else {
-                                    snprintf(buffer, sizeof(buffer), "已设置%d秒后提醒：%s", 
-                                             schedule.delay_seconds, schedule.message.c_str());
+                ReminderCommandType cmd_type = VoiceCommandParser::ParseReminderManagementCommand(user_text, schedule);
+                
+                switch (cmd_type) {
+                    case ReminderCommandType::kSet:
+                        ESP_LOGI(TAG, "Parsed set reminder: type=%d, time=%02d:%02d, message: %s",
+                                 (int)schedule.type, schedule.hour, schedule.minute, schedule.message.c_str());
+                        Schedule([this, schedule]() {
+                            int id = reminder_timer_.SetReminderFromSchedule(schedule);
+                            if (id > 0) {
+                                char buffer[128];
+                                switch (schedule.type) {
+                                    case ReminderType::kOnce:
+                                        if (schedule.year > 0) {
+                                            snprintf(buffer, sizeof(buffer), "已设置提醒(ID:%d)：%04d-%02d-%02d %02d:%02d %s",
+                                                     id, schedule.year, schedule.month, schedule.day,
+                                                     schedule.hour, schedule.minute, schedule.message.c_str());
+                                        } else {
+                                            snprintf(buffer, sizeof(buffer), "已设置%d秒后提醒(ID:%d)：%s", 
+                                                     schedule.delay_seconds, id, schedule.message.c_str());
+                                        }
+                                        break;
+                                    case ReminderType::kDaily:
+                                        snprintf(buffer, sizeof(buffer), "已设置每天%02d:%02d提醒(ID:%d)：%s",
+                                                 schedule.hour, schedule.minute, id, schedule.message.c_str());
+                                        break;
+                                    case ReminderType::kWorkdays:
+                                        snprintf(buffer, sizeof(buffer), "已设置工作日%02d:%02d提醒(ID:%d)：%s",
+                                                 schedule.hour, schedule.minute, id, schedule.message.c_str());
+                                        break;
+                                    case ReminderType::kWeekends:
+                                        snprintf(buffer, sizeof(buffer), "已设置周末%02d:%02d提醒(ID:%d)：%s",
+                                                 schedule.hour, schedule.minute, id, schedule.message.c_str());
+                                        break;
+                                    case ReminderType::kWeekly:
+                                        snprintf(buffer, sizeof(buffer), "已设置每周%02d:%02d提醒(ID:%d)：%s",
+                                                 schedule.hour, schedule.minute, id, schedule.message.c_str());
+                                        break;
                                 }
-                                break;
-                            case ReminderType::kDaily:
-                                snprintf(buffer, sizeof(buffer), "已设置每天%02d:%02d提醒：%s",
-                                         schedule.hour, schedule.minute, schedule.message.c_str());
-                                break;
-                            case ReminderType::kWorkdays:
-                                snprintf(buffer, sizeof(buffer), "已设置工作日%02d:%02d提醒：%s",
-                                         schedule.hour, schedule.minute, schedule.message.c_str());
-                                break;
-                            case ReminderType::kWeekends:
-                                snprintf(buffer, sizeof(buffer), "已设置周末%02d:%02d提醒：%s",
-                                         schedule.hour, schedule.minute, schedule.message.c_str());
-                                break;
-                            case ReminderType::kWeekly:
-                                snprintf(buffer, sizeof(buffer), "已设置每周%02d:%02d提醒：%s",
-                                         schedule.hour, schedule.minute, schedule.message.c_str());
-                                break;
-                        }
-                        Alert("提醒设置", buffer, "check", "");
-                    });
-                } else {
-                    // Fallback to relative time reminder (e.g., "5 minutes later")
-                    int minutes = 0;
-                    if (VoiceCommandParser::ParseReminderCommand(user_text, minutes, reminder_message)) {
-                        ESP_LOGI(TAG, "Parsed relative reminder: %d minutes, message: %s", minutes, reminder_message.c_str());
-                        // Set reminder
-                        Schedule([this, minutes, reminder_message]() {
-                            SetReminder(minutes, reminder_message);
+                                Alert("提醒设置", buffer, "check", "");
+                            } else {
+                                Alert("提醒设置失败", "已达到最大提醒数量", "error", "");
+                            }
                         });
-                    } else {
+                        break;
+                        
+                    case ReminderCommandType::kCancelAll:
+                        ESP_LOGI(TAG, "Parsed cancel all reminders command");
+                        Schedule([this]() {
+                            CancelAllReminders();
+                        });
+                        break;
+                        
+                    case ReminderCommandType::kList:
+                        ESP_LOGI(TAG, "Parsed list reminders command");
+                        Schedule([this]() {
+                            ListReminders();
+                        });
+                        break;
+                        
+                    case ReminderCommandType::kCancelById:
+                        ESP_LOGI(TAG, "Parsed cancel reminder by ID: %d", schedule.reminder_id);
+                        Schedule([this, id = schedule.reminder_id]() {
+                            CancelReminderById(id);
+                        });
+                        break;
+                        
+                    case ReminderCommandType::kCancel:
+                        ESP_LOGI(TAG, "Parsed cancel reminder command");
+                        Schedule([this]() {
+                            if (reminder_timer_.HasReminders()) {
+                                CancelAllReminders();
+                            } else {
+                                Alert("取消提醒", "当前没有设置提醒", "info", "");
+                            }
+                        });
+                        break;
+                        
+                    case ReminderCommandType::kNone:
+                    default:
                         ESP_LOGI(TAG, "No reminder command found in: %s", user_text.c_str());
+                        break;
+                }
                     }
                 }
                 
@@ -1324,7 +1354,12 @@ void Application::SetReminderBySeconds(int seconds, const std::string& message) 
     
     ESP_LOGI(TAG, "Setting reminder for %d seconds", seconds);
     
-    reminder_timer_.SetReminder(seconds, actual_message);
+    int id = reminder_timer_.SetReminder(seconds, actual_message);
+    if (id < 0) {
+        ESP_LOGE(TAG, "Failed to set reminder");
+        Alert("提醒设置失败", "已达到最大提醒数量", "error", "");
+        return;
+    }
     
     // Show confirmation
     int minutes = seconds / 60;
@@ -1332,18 +1367,61 @@ void Application::SetReminderBySeconds(int seconds, const std::string& message) 
     
     char buffer[128];
     if (minutes > 0) {
-        snprintf(buffer, sizeof(buffer), "已设置%d分%d秒后提醒：%s", minutes, remaining_seconds, actual_message.c_str());
+        snprintf(buffer, sizeof(buffer), "已设置%d分%d秒后提醒：%s (ID:%d)", minutes, remaining_seconds, actual_message.c_str(), id);
     } else {
-        snprintf(buffer, sizeof(buffer), "已设置%d秒后提醒：%s", seconds, actual_message.c_str());
+        snprintf(buffer, sizeof(buffer), "已设置%d秒后提醒：%s (ID:%d)", seconds, actual_message.c_str(), id);
     }
     ESP_LOGI(TAG, "Showing reminder confirmation: %s", buffer);
     
     Alert("提醒设置", buffer, "check", "");
     
-    // Log reminder timer status
-    ESP_LOGI(TAG, "Reminder timer set with %d seconds, message: %s", seconds, actual_message.c_str());
+    ESP_LOGI(TAG, "Reminder %d set successfully, total: %d", id, reminder_timer_.GetReminderCount());
+}
+
+void Application::CancelAllReminders() {
+    ESP_LOGI(TAG, "Cancelling all reminders");
+    reminder_timer_.CancelAllReminders();
+    Alert("提醒取消", "已取消所有提醒", "check", "");
+}
+
+void Application::CancelReminderById(int id) {
+    ESP_LOGI(TAG, "Cancelling reminder %d", id);
+    if (reminder_timer_.CancelReminder(id)) {
+        char buffer[64];
+        snprintf(buffer, sizeof(buffer), "已取消提醒 %d", id);
+        Alert("提醒取消", buffer, "check", "");
+    } else {
+        char buffer[64];
+        snprintf(buffer, sizeof(buffer), "找不到提醒 %d", id);
+        Alert("取消失败", buffer, "error", "");
+    }
+}
+
+int Application::GetReminderCount() const {
+    return reminder_timer_.GetReminderCount();
+}
+
+void Application::ListReminders() {
+    int count = reminder_timer_.GetReminderCount();
+    ESP_LOGI(TAG, "Listing %d reminders", count);
     
-    ESP_LOGI(TAG, "Reminder set successfully");
+    if (count == 0) {
+        Alert("提醒列表", "当前没有设置提醒", "info", "");
+        return;
+    }
+    
+    const auto& reminders = reminder_timer_.GetAllReminders();
+    std::string list_text = "当前提醒：\n";
+    
+    for (const auto& pair : reminders) {
+        const ReminderItem& r = pair.second;
+        char buffer[128];
+        snprintf(buffer, sizeof(buffer), "ID:%d %02d:%02d %s\n", 
+                 r.id, r.hour, r.minute, r.message.c_str());
+        list_text += buffer;
+    }
+    
+    Alert("提醒列表", list_text.c_str(), "list", "");
 }
 
 void Application::HandleReminderFailure() {

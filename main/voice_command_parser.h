@@ -11,6 +11,15 @@ enum class ReminderType {
     kWeekends           // 周末重复（周六、周日）
 };
 
+enum class ReminderCommandType {
+    kNone,              // 无命令
+    kSet,               // 设置提醒
+    kCancel,            // 取消提醒
+    kCancelAll,         // 取消所有提醒
+    kList,              // 列出提醒
+    kCancelById         // 按ID取消提醒
+};
+
 struct ReminderSchedule {
     ReminderType type = ReminderType::kOnce;
     int year = 0;
@@ -21,6 +30,7 @@ struct ReminderSchedule {
     std::vector<int> weekdays;  // 0=周日, 1=周一, ..., 6=周六
     std::string message;
     int delay_seconds = 0;  // For relative time reminders
+    int reminder_id = 0;    // For cancel by ID
 };
 
 class VoiceCommandParser {
@@ -33,6 +43,9 @@ public:
     
     // Parse advanced reminder with repeat options
     static bool ParseAdvancedReminderCommand(const std::string& command, ReminderSchedule& schedule);
+    
+    // Parse reminder management commands (cancel, list, etc.)
+    static ReminderCommandType ParseReminderManagementCommand(const std::string& command, ReminderSchedule& schedule);
     
 private:
     static bool ParseTimeExpression(const std::string& time_str, int& hour, int& minute);
