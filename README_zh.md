@@ -35,6 +35,7 @@ v1 的稳定版本为 1.9.2，可以通过 `git checkout v1` 来切换到 v1 版
 - 通过设备端 MCP 实现设备控制（音量、灯光、电机、GPIO 等）
 - 通过云端 MCP 扩展大模型能力（智能家居控制、PC桌面操作、知识搜索、邮件收发等）
 - 自定义唤醒词、字体、表情与聊天背景，支持网页端在线修改 ([自定义Assets生成器](https://github.com/78/xiaozhi-assets-generator))
+- **定时提醒功能**：支持相对时间、指定时间、工作日、每天重复提醒 ([功能说明](docs/reminder-feature.md))
 
 ## 硬件
 
@@ -126,6 +127,7 @@ v1 的稳定版本为 1.9.2，可以通过 `git checkout v1` 来切换到 v1 版
 - [MCP 协议交互流程](docs/mcp-protocol.md) - 设备端 MCP 协议的实现方式
 - [MQTT + UDP 混合通信协议文档](docs/mqtt-udp.md)
 - [一份详细的 WebSocket 通信协议文档](docs/websocket.md)
+- [定时提醒功能说明](docs/reminder-feature.md) - 定时提醒功能的使用方法和实现原理
 
 ## 大模型配置
 
