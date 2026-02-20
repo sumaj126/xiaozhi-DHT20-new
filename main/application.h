@@ -18,6 +18,7 @@
 #include "device_state.h"
 #include "device_state_machine.h"
 #include "reminder_timer.h"
+#include "voice_command_parser.h"
 
 // Main event bits
 #define MAIN_EVENT_SCHEDULE             (1 << 0)

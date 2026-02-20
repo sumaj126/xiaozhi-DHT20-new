@@ -641,26 +641,59 @@ void Application::InitializeProtocol() {
                 std::string user_text = text->valuestring;
                 
                 // Parse reminder commands
-                int minutes = 0;
                 std::string reminder_message;
                             
                 ESP_LOGI(TAG, "Parsing reminder command: %s", user_text.c_str());
-                            
-                // Parse relative time reminder (e.g., "5 minutes later")
-                if (VoiceCommandParser::ParseReminderCommand(user_text, minutes, reminder_message)) {
-                    ESP_LOGI(TAG, "Parsed relative reminder: %d minutes, message: %s", minutes, reminder_message.c_str());
-                    // Set reminder
-                    Schedule([this, minutes, reminder_message]() {
-                        SetReminder(minutes, reminder_message);
+                
+                // Try to parse advanced reminder command first
+                ReminderSchedule schedule;
+                if (VoiceCommandParser::ParseAdvancedReminderCommand(user_text, schedule)) {
+                    ESP_LOGI(TAG, "Parsed advanced reminder: type=%d, time=%02d:%02d, message: %s",
+                             (int)schedule.type, schedule.hour, schedule.minute, schedule.message.c_str());
+                    // Set reminder from schedule
+                    Schedule([this, schedule]() {
+                        reminder_timer_.SetReminderFromSchedule(schedule);
+                        
+                        // Show confirmation
+                        char buffer[128];
+                        switch (schedule.type) {
+                            case ReminderType::kOnce:
+                                if (schedule.year > 0) {
+                                    snprintf(buffer, sizeof(buffer), "已设置提醒：%04d-%02d-%02d %02d:%02d %s",
+                                             schedule.year, schedule.month, schedule.day,
+                                             schedule.hour, schedule.minute, schedule.message.c_str());
+                                } else {
+                                    snprintf(buffer, sizeof(buffer), "已设置%d秒后提醒：%s", 
+                                             schedule.delay_seconds, schedule.message.c_str());
+                                }
+                                break;
+                            case ReminderType::kDaily:
+                                snprintf(buffer, sizeof(buffer), "已设置每天%02d:%02d提醒：%s",
+                                         schedule.hour, schedule.minute, schedule.message.c_str());
+                                break;
+                            case ReminderType::kWorkdays:
+                                snprintf(buffer, sizeof(buffer), "已设置工作日%02d:%02d提醒：%s",
+                                         schedule.hour, schedule.minute, schedule.message.c_str());
+                                break;
+                            case ReminderType::kWeekends:
+                                snprintf(buffer, sizeof(buffer), "已设置周末%02d:%02d提醒：%s",
+                                         schedule.hour, schedule.minute, schedule.message.c_str());
+                                break;
+                            case ReminderType::kWeekly:
+                                snprintf(buffer, sizeof(buffer), "已设置每周%02d:%02d提醒：%s",
+                                         schedule.hour, schedule.minute, schedule.message.c_str());
+                                break;
+                        }
+                        Alert("提醒设置", buffer, "check", "");
                     });
                 } else {
-                    // Parse absolute date time reminder (e.g., "2026年2月16日 12:30 提醒我")
-                    int year = 0, month = 0, day = 0, hour = 0, minute = 0;
-                    if (VoiceCommandParser::ParseDateTimeReminderCommand(user_text, year, month, day, hour, minute, reminder_message)) {
-                        ESP_LOGI(TAG, "Parsed absolute reminder: %d-%d-%d %d:%d, message: %s", year, month, day, hour, minute, reminder_message.c_str());
-                        // Set date time reminder
-                        Schedule([this, year, month, day, hour, minute, reminder_message]() {
-                            SetDateTimeReminder(year, month, day, hour, minute, reminder_message);
+                    // Fallback to relative time reminder (e.g., "5 minutes later")
+                    int minutes = 0;
+                    if (VoiceCommandParser::ParseReminderCommand(user_text, minutes, reminder_message)) {
+                        ESP_LOGI(TAG, "Parsed relative reminder: %d minutes, message: %s", minutes, reminder_message.c_str());
+                        // Set reminder
+                        Schedule([this, minutes, reminder_message]() {
+                            SetReminder(minutes, reminder_message);
                         });
                     } else {
                         ESP_LOGI(TAG, "No reminder command found in: %s", user_text.c_str());
