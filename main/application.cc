@@ -68,8 +68,8 @@ Application::Application() {
                 ESP_LOGI(TAG, "Triggering server TTS via WakeWordInvoke");
                 
                 // Construct a message that asks the server to speak the reminder directly
-                // Format: "请大声说：提醒时间到了，XXX"
-                std::string tts_text = "请大声说：提醒时间到了，" + message;
+                // The server will respond to this message, so we ask it to say exactly what we want
+                std::string tts_text = "现在请直接说这句话：提醒时间到了，" + message + "。不要说其他内容，只说这句话。";
                 ESP_LOGI(TAG, "Sending TTS request: %s", tts_text.c_str());
                 WakeWordInvoke(tts_text);
             } else {
