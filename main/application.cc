@@ -67,8 +67,10 @@ Application::Application() {
             if (protocol_ && GetDeviceState() == kDeviceStateIdle) {
                 ESP_LOGI(TAG, "Triggering server TTS via WakeWordInvoke");
                 
-                // Use WakeWordInvoke directly with reminder text
-                std::string tts_text = "提醒时间到了，" + message;
+                // Construct a message that asks the server to speak the reminder directly
+                // Format: "请大声说：提醒时间到了，XXX"
+                std::string tts_text = "请大声说：提醒时间到了，" + message;
+                ESP_LOGI(TAG, "Sending TTS request: %s", tts_text.c_str());
                 WakeWordInvoke(tts_text);
             } else {
                 // Fallback to local sounds
